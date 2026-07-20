@@ -135,7 +135,8 @@ public:
         if (!this->hasFocus()) {
             return;
         }
-        drawCursorImpl(renderer, position, this->getFontStyle().size + this->getFontStyle().getDescenderHeight());
+        // cursor height matches selection rect (size + ascender).
+        drawCursorImpl(renderer, position, this->getFontStyle().size + this->getFontStyle().getAscenderHeight());
     }
 
 protected:
