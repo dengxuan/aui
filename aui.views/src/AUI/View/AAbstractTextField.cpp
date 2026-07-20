@@ -44,7 +44,8 @@ void AAbstractTextField::render(ARenderContext ctx) {
     prerenderStringIfNeeded(ctx.render);
 
     AStaticVector<ARect<int>, 1> selectionRects;
-    int y = mPadding.top + getVerticalAlignmentOffset() - getFontStyle().getAscenderHeight() - getFontStyle().getDescenderHeight() * 2;
+    // selection/cursor top aligns with glyph top = baseline (VAO) - ascender.
+    int y = getVerticalAlignmentOffset() - getFontStyle().getAscenderHeight();
     if (hasSelection()) {
         auto s = selection();
         auto beginPos = getPosByIndex(s.begin).x;
