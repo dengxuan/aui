@@ -72,7 +72,7 @@ cmake_minimum_required(VERSION 3.16)
 project(aui_app)
 
 include(aui.boot.cmake)
-set(AUI_VERSION l8chat-patches-v2)
+set(AUI_VERSION l8chat-patches-v3)
 
 # import AUI
 auib_import(aui https://github.com/aui-framework/aui
