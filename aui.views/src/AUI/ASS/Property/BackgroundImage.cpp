@@ -146,6 +146,10 @@ void ass::prop::Property<ass::BackgroundImage>::draw(
             break;
         }
         case Sizing::SPLIT_2X2: {
+            // overlayColor must apply here as in every other sizing branch (they route
+            // through drawableDrawWrapper); otherwise SPLIT_2X2 silently ignores it.
+            RenderHints::PushColor overlayGuard(ctx.render);
+            ctx.render.setColor(info.overlayColor.orDefault(0xffffff_rgb));
             auto ratio = AWindow::current()->getDpiRatio() / info.dpiMargin.orDefault(1.f);
             auto textureSize = glm::vec2(drawable->getSizeHint()) * ratio;
             auto textureWidth = textureSize.x;
