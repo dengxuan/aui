@@ -35,17 +35,21 @@ void PlatformWin32::setClipboardText(const AString& text) {
 
 AString PlatformWin32::getClipboardText() {
     OpenClipboard(nullptr);
+    AUI_DEFER { CloseClipboard(); };
+    // 剪贴板无 Unicode 文本（空 / 图片 / 文件）时 GetClipboardData 返回 NULL；
+    // GlobalLock(NULL) 也 NULL。直接拿去构造 wstring_view 会对空指针 wcslen 崩溃，
+    // 所以必须先判空再构造。
     HGLOBAL hMem = GetClipboardData(CF_UNICODETEXT);
-    std::wstring_view memView = static_cast<const wchar_t*>(GlobalLock(hMem));
-    AUI_DEFER {
-        GlobalUnlock(hMem);
-        CloseClipboard();
-    };
-    if (memView.data()) {
-        AString s(reinterpret_cast<const char16_t*>(memView.data()), memView.length());
-        return s;
+    if (!hMem) {
+        return {};
     }
-    return {};
+    auto* data = static_cast<const wchar_t*>(GlobalLock(hMem));
+    if (!data) {
+        return {};
+    }
+    AUI_DEFER { GlobalUnlock(hMem); };
+    std::wstring_view memView = data;
+    return AString(reinterpret_cast<const char16_t*>(memView.data()), memView.length());
 }
 
 AMessageBox::ResultButton PlatformWin32::messageBoxShow(
