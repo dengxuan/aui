@@ -36,8 +36,10 @@ public:
         FontEntryData() {
             texture.bind();
             texture.setupNearest();
+            // 彩色 emoji 用线性过滤——emoji 位图缩放到显示尺寸时 nearest 会锯齿/糊块，
+            // linear 平滑（普通文字保持 nearest 求锐利边缘）。
             coloredTexture.bind();
-            coloredTexture.setupNearest();
+            coloredTexture.setupLinear();
         }
     };
 
