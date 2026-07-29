@@ -108,8 +108,10 @@ AFont::Character AFont::renderGlyph(const FontEntry& fs, AChar glyph) {
         const unsigned srcW = g->bitmap.width, srcH = g->bitmap.rows;
         // 目标缩放：strike 高度可能 != size，等比缩放到 size 像素行高。
         const float scale = srcH > 0 ? float(size) / float(srcH) : 1.f;
-        const unsigned dstW = std::max(1u, unsigned(srcW * scale + 0.5f));
-        const unsigned dstH = std::max(1u, unsigned(srcH * scale + 0.5f));
+        // 防御性上限：dst 不超过 size 的 2 倍（彩色字形不该比行高大太多，防图集爆显存）。
+        const unsigned cap = unsigned(size) * 2 + 2;
+        const unsigned dstW = std::min(cap, std::max(1u, unsigned(srcW * scale + 0.5f)));
+        const unsigned dstH = std::min(cap, std::max(1u, unsigned(srcH * scale + 0.5f)));
 
         AByteBuffer data;
         data.resize(size_t(dstW) * dstH * 4);
