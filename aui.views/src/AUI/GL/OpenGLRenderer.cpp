@@ -774,7 +774,11 @@ public:
                     if (ch.rendererData == nullptr) {
                         uv = pk.insert(*ch.image);
 
-                        const float BIAS = 0.1f;
+                        // 单通道字形（nearest 过滤）收 0.1px 防边缘 bleed。
+                        // 彩色 emoji 用线性过滤：UV 落在纹素边界时，右/下边采样会跨到图集里
+                        // 相邻的透明间隙，线性插值把边缘淡成透明 = 每个 emoji 右下「被切」。
+                        // 修正：彩色 UV 内收半个纹素（0.5px），采样落在纹素中心，边缘完整。
+                        const float BIAS = ch.colored ? 0.5f : 0.1f;
                         uv.x += BIAS;
                         uv.y += BIAS;
                         uv.z -= BIAS;
