@@ -199,6 +199,10 @@ AFont::Character AFont::renderGlyph(const FontEntry& fs, AChar glyph) {
     return Character{};
 }
 
+bool AFont::hasGlyph(AChar glyph) const {
+    return FT_Get_Char_Index(mFace, glyph.codepoint()) != 0;
+}
+
 AFont::Character& AFont::getCharacter(const FontEntry& charset, AChar glyph) {
     auto& chars = charset.second.characters;
     if (chars.size() > glyph && chars[glyph.codepoint()]) {
@@ -206,6 +210,13 @@ AFont::Character& AFont::getCharacter(const FontEntry& charset, AChar glyph) {
     } else {
         if (chars.size() <= glyph) {
             chars.resize(glyph + 1, std::nullopt);
+        }
+        // 主字体缺该字符（FT_Get_Char_Index==0，如雅黑无 emoji）→ 委托回退字体渲染，
+        // 结果缓存进本字体的槽（避免重复走 fallback 查找）。空格/换行等控制字符不 fallback。
+        if (mFallback && glyph != U' ' && glyph != U'\n' && !hasGlyph(glyph)) {
+            auto fe = mFallback->getFontEntry(charset.first);
+            chars[glyph.codepoint()] = mFallback->getCharacter(fe, glyph);
+            return *chars[glyph.codepoint()];
         }
         chars[glyph.codepoint()] = std::move(renderGlyph(charset, glyph));
 

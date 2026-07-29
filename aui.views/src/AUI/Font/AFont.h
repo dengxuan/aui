@@ -120,6 +120,7 @@ private:
     _<FreeType> ft;
     AByteBuffer mFontDataBuffer;
     FT_FaceRec_* mFace;
+    _<AFont> mFallback;   // 主字体缺该字符时的回退字体（如中文字体 fallback emoji 字体）
 
     AMap<FontKey, FontData> mCharData;
 
@@ -128,8 +129,12 @@ private:
     }
 
     Character renderGlyph(const FontEntry& fs, AChar glyph);
+    // 该 codepoint 在本字体的 face 里有字形吗（FT_Get_Char_Index != 0）。
+    bool hasGlyph(AChar glyph) const;
 
 public:
+    // 设置回退字体：主字体缺字符时委托给它渲染（可链式，emoji/符号补字）。
+    void setFallback(_<AFont> fallback) { mFallback = std::move(fallback); }
     AFont(AFontManager* fm, const AString& path);
 
     AFont(AFontManager* fm, const AUrl& url);
