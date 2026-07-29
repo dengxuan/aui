@@ -562,6 +562,7 @@ public:
     };
     OpenGLRenderer* mRenderer;
     AOptional<gl::Vao> mVao;
+    AOptional<gl::Vao> mColoredVao;   // 彩色批独立 VAO——绝不碰普通 pass 的 VAO 状态
     gl::VertexBuffer mVertexBuffer;
     gl::IndexBuffer mIndexBuffer;
     AOptional<gl::IndexBuffer> mColoredIndexBuffer;   // 彩色 emoji 索引（有 emoji 才建）
@@ -593,6 +594,15 @@ public:
             mIndexBuffer.bind();
             setupVertexAttribs();
             gl::Vao::unbind();
+            // 彩色批独立 VAO（同一 VBO + 彩色 IBO），避免彩色 pass 手动绑定污染普通 VAO。
+            if (mColoredIndexBuffer) {
+                mColoredVao.emplace();
+                mColoredVao->bind();
+                mVertexBuffer.bind();
+                mColoredIndexBuffer->bind();
+                setupVertexAttribs();
+                gl::Vao::unbind();
+            }
         }
     }
 
@@ -660,10 +670,14 @@ public:
             } else {
                 mEntryData->coloredTexture.bind();
             }
-            // VAO 绑的是普通 index buffer，彩色这批走手动绑定路径。
-            mVertexBuffer.bind();
-            mColoredIndexBuffer->bind();
-            setupVertexAttribs();
+            // 用彩色批独立 VAO（或无 VAO 时手动绑），绝不碰普通 pass 的 VAO 状态。
+            if (mColoredVao) {
+                mColoredVao->bind();
+            } else {
+                mVertexBuffer.bind();
+                mColoredIndexBuffer->bind();
+                setupVertexAttribs();
+            }
 
             mRenderer->setBlending(Blending::NORMAL);
             mRenderer->mSymbolShaderColor->use();
@@ -672,6 +686,7 @@ public:
             mRenderer->mSymbolShaderColor->set(aui::ShaderUniforms::COLOR, finalColor);
             mColoredIndexBuffer->drawWithoutBind(GL_TRIANGLES);
         }
+        if (mVao || mColoredVao) gl::Vao::unbind();   // 收尾解绑，不留 VAO 绑定态泄漏
     }
 
     int getWidth() override {
