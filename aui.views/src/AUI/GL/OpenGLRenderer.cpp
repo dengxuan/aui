@@ -564,7 +564,7 @@ public:
     AOptional<gl::Vao> mVao;
     gl::VertexBuffer mVertexBuffer;
     gl::IndexBuffer mIndexBuffer;
-    gl::IndexBuffer mColoredIndexBuffer;   // 彩色 emoji 那批索引（独立 RGBA 图集）
+    AOptional<gl::IndexBuffer> mColoredIndexBuffer;   // 彩色 emoji 索引（有 emoji 才建）
     int mTextWidth;
     int mTextHeight;
     OpenGLRenderer::FontEntryData* mEntryData;
@@ -573,7 +573,7 @@ public:
     OpenGLPrerenderedString(OpenGLRenderer* renderer,
                             gl::VertexBuffer vertexBuffer,
                             gl::IndexBuffer indexBuffer,
-                            gl::IndexBuffer coloredIndexBuffer,
+                            AOptional<gl::IndexBuffer> coloredIndexBuffer,
                             int textWidth,
                             int textHeight,
                             OpenGLRenderer::FontEntryData* entryData,
@@ -598,7 +598,8 @@ public:
 
 
     void draw() override {
-        if (mIndexBuffer.count() == 0 && mColoredIndexBuffer.count() == 0) return;
+        const bool hasColored = mColoredIndexBuffer && mColoredIndexBuffer->count() > 0;
+        if (mIndexBuffer.count() == 0 && !hasColored) return;
 
         if (AWindow::current()->profiling()->showBaseline) {
             mRenderer->rectangle(
@@ -651,7 +652,7 @@ public:
 
         // ---- 彩色 emoji pass（RGBA 图集 + symbol_color shader，不染色，普通混合）----
         decltype(auto) cimg = mEntryData->coloredTexturePacker.getImage();
-        if (cimg && mColoredIndexBuffer.count() > 0 && mRenderer->mSymbolShaderColor) {
+        if (hasColored && cimg && mRenderer->mSymbolShaderColor) {
             float uvScale = 1.f / float(cimg->width());
             if (mEntryData->isColoredTextureInvalid) {
                 mEntryData->coloredTexture.tex2D(*cimg);
@@ -661,7 +662,7 @@ public:
             }
             // VAO 绑的是普通 index buffer，彩色这批走手动绑定路径。
             mVertexBuffer.bind();
-            mColoredIndexBuffer.bind();
+            mColoredIndexBuffer->bind();
             setupVertexAttribs();
 
             mRenderer->setBlending(Blending::NORMAL);
@@ -669,7 +670,7 @@ public:
             mRenderer->mSymbolShaderColor->set(aui::ShaderUniforms::UV_SCALE, uvScale);
             mRenderer->mSymbolShaderColor->set(aui::ShaderUniforms::TRANSFORM, mRenderer->getTransform());
             mRenderer->mSymbolShaderColor->set(aui::ShaderUniforms::COLOR, finalColor);
-            mColoredIndexBuffer.drawWithoutBind(GL_TRIANGLES);
+            mColoredIndexBuffer->drawWithoutBind(GL_TRIANGLES);
         }
     }
 
@@ -830,8 +831,13 @@ public:
         }
         gl::IndexBuffer indexBuffer;
         indexBuffer.set(indices);
-        gl::IndexBuffer coloredIndexBuffer;
-        coloredIndexBuffer.set(coloredIndices);
+        // 彩色 index buffer 只在真有彩色字形时才建——绝大多数文本没 emoji，无条件建
+        // 空 buffer 会给每个 label/消息多分配一个 GL buffer 对象 → 重渲染下爆显存 OOM。
+        AOptional<gl::IndexBuffer> coloredIndexBuffer;
+        if (!coloredIndices.empty()) {
+            coloredIndexBuffer.emplace();
+            coloredIndexBuffer->set(coloredIndices);
+        }
 
         return _new<OpenGLPrerenderedString>(mRenderer,
                                              std::move(vertexBuffer),
