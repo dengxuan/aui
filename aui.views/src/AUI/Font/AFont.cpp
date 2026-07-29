@@ -16,6 +16,9 @@
 #include "AUI/Platform/AFontManager.h"
 #include <fstream>
 #include <string>
+#include <algorithm>
+#include <climits>
+#include <cstdint>
 #include "AUI/Common/AStringVector.h"
 #include "AFont.h"
 
@@ -69,13 +72,29 @@ AFont::Character AFont::renderGlyph(const FontEntry& fs, AChar glyph) {
     int size = fs.first.size;
     FontRendering fr = fs.first.fr;
 
-    FT_Set_Pixel_Sizes(mFace, 0, size);
+    // 彩色 emoji 字体（COLR/CBDT/sbix）是固定位图 strike——FT_Set_Pixel_Sizes 常失败，
+    // 需先按 FT_FACE_FLAG_COLOR 探测：有彩色字形时选最近 strike，渲染出 BGRA 位图后缩放到 size。
+    const bool fontHasColor = (mFace->face_flags & FT_FACE_FLAG_COLOR) != 0;
+
+    if (fontHasColor && (mFace->face_flags & FT_FACE_FLAG_SCALABLE) == 0) {
+        // 纯位图彩色字体：选像素高度最接近 size 的 strike。
+        int best = 0; int bestDiff = INT_MAX;
+        for (int i = 0; i < mFace->num_fixed_sizes; ++i) {
+            int h = mFace->available_sizes[i].height;
+            int d = h > size ? h - size : size - h;
+            if (d < bestDiff) { bestDiff = d; best = i; }
+        }
+        if (mFace->num_fixed_sizes > 0) FT_Select_Size(mFace, best);
+    } else {
+        FT_Set_Pixel_Sizes(mFace, 0, size);
+    }
 
     FT_Int32 flags = FT_LOAD_RENDER;
+    if (fontHasColor) flags |= FT_LOAD_COLOR;    // 让 FreeType 输出 BGRA 彩色位图
 
-    if (fr == FontRendering::SUBPIXEL)
+    if (fr == FontRendering::SUBPIXEL && !fontHasColor)
         flags |= FT_LOAD_TARGET_LCD;
-    if (fr == FontRendering::NEAREST)
+    if (fr == FontRendering::NEAREST && !fontHasColor)
         flags |= FT_LOAD_TARGET_MONO;
 
     FT_Error e = FT_Load_Char(mFace, glyph.codepoint(), flags);
@@ -83,6 +102,47 @@ AFont::Character AFont::renderGlyph(const FontEntry& fs, AChar glyph) {
         throw std::runtime_error(("Cannot load char: error code" + AString::number(e)).toStdString());
     }
     FT_GlyphSlot g = mFace->glyph;
+
+    // ---- 彩色 BGRA 位图字形分支：转 RGBA + 缩放到目标行高，metrics 按缩放比换算 ----
+    if (g->bitmap.pixel_mode == FT_PIXEL_MODE_BGRA && g->bitmap.width && g->bitmap.rows) {
+        const unsigned srcW = g->bitmap.width, srcH = g->bitmap.rows;
+        // 目标缩放：strike 高度可能 != size，等比缩放到 size 像素行高。
+        const float scale = srcH > 0 ? float(size) / float(srcH) : 1.f;
+        const unsigned dstW = std::max(1u, unsigned(srcW * scale + 0.5f));
+        const unsigned dstH = std::max(1u, unsigned(srcH * scale + 0.5f));
+
+        AByteBuffer data;
+        data.resize(size_t(dstW) * dstH * 4);
+        auto* out = reinterpret_cast<uint8_t*>(data.data());
+        // 最近邻缩放 + BGRA→RGBA（premultiplied alpha 保留，直接搬通道）。
+        for (unsigned y = 0; y < dstH; ++y) {
+            unsigned sy = std::min(srcH - 1, unsigned(y / scale));
+            const uint8_t* srcRow = g->bitmap.buffer + size_t(sy) * g->bitmap.pitch;
+            for (unsigned x = 0; x < dstW; ++x) {
+                unsigned sx = std::min(srcW - 1, unsigned(x / scale));
+                const uint8_t* p = srcRow + size_t(sx) * 4;   // BGRA
+                uint8_t* q = out + (size_t(y) * dstW + x) * 4;
+                q[0] = p[2]; q[1] = p[1]; q[2] = p[0]; q[3] = p[3];   // RGBA
+            }
+        }
+        const float div = 1.f / 64.f;
+        // bearing/advance 用 bitmap_left/top（像素）× scale，advance 用 metrics.horiAdvance × scale。
+        return Character{
+            .image = _new<AImage>(data, glm::uvec2(dstW, dstH),
+                                  APixelFormat::BYTE | APixelFormat::RGBA),
+            .size = { float(dstW), float(dstH) },
+            .horizontal = {
+              .bearing = { g->bitmap_left * scale, g->bitmap_top * scale },
+              .advance = div * g->metrics.horiAdvance * scale,
+            },
+            .vertical = {
+              .bearing = { div * g->metrics.vertBearingX * scale, div * g->metrics.vertBearingY * scale },
+              .advance = div * g->metrics.vertAdvance * scale,
+            },
+            .colored = true,
+        };
+    }
+
     if (g->bitmap.width && g->bitmap.rows) {
         const float div = 1.f / 64.f;
         int width = g->bitmap.width;

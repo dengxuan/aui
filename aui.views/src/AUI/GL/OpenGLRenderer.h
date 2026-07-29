@@ -27,10 +27,17 @@ public:
         Util::SimpleTexturePacker texturePacker;
         gl::Texture2D texture;
         bool isTextureInvalid = true;
+        // 彩色字形（emoji，RGBA）走独立图集/纹理——不能与单通道字形混一张图集
+        // （AImage::insert 会隐式转格式毁色，见彩色 emoji 渲染改造）。
+        Util::SimpleTexturePacker coloredTexturePacker;
+        gl::Texture2D coloredTexture;
+        bool isColoredTextureInvalid = true;
 
         FontEntryData() {
             texture.bind();
             texture.setupNearest();
+            coloredTexture.bind();
+            coloredTexture.setupNearest();
         }
     };
 
@@ -59,6 +66,7 @@ private:
     AOptional<gl::Program> mUnblendShader;
     AOptional<gl::Program> mSymbolShader;
     AOptional<gl::Program> mSymbolShaderSubPixel;
+    AOptional<gl::Program> mSymbolShaderColor;   // 彩色 emoji（RGBA 图集，不染色）
     AOptional<gl::Program> mSquareSectorShader;
     AOptional<gl::Program> mLineSolidDashedShader;
     gl::Vao mRectangleVao;

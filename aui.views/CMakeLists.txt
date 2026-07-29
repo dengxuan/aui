@@ -88,6 +88,7 @@ if (OPENGL_FOUND OR ANDROID OR IOS)
     auisl_shader(aui.views symbol.vsh)
     auisl_shader(aui.views symbol.fsh)
     auisl_shader(aui.views symbol_sub.fsh)
+    auisl_shader(aui.views symbol_color.fsh)
     auisl_shader(aui.views square_sector.fsh)
     auisl_shader(aui.views line_solid_dashed.fsh)
 

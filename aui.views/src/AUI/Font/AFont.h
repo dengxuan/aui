@@ -85,6 +85,12 @@ public:
             return image == nullptr;
         }
 
+        /**
+         * @brief True if this glyph is a colored bitmap (e.g. color emoji, RGBA), rendered as-is
+         *        without TextColor tinting. Colored glyphs go to a separate RGBA atlas.
+         */
+        bool colored = false;
+
         void* rendererData = nullptr;
     };
 

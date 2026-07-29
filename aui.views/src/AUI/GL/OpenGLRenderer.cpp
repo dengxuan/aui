@@ -56,6 +56,7 @@
 #include <AUISL/Generated/symbol.vsh.glsl120.h>
 #include <AUISL/Generated/symbol.fsh.glsl120.h>
 #include <AUISL/Generated/symbol_sub.fsh.glsl120.h>
+#include <AUISL/Generated/symbol_color.fsh.glsl120.h>
 #include <AUISL/Generated/line_solid_dashed.fsh.glsl120.h>
 #include <AUISL/Generated/square_sector.fsh.glsl120.h>
 #include <glm/gtx/matrix_transform_2d.hpp>
@@ -281,6 +282,8 @@ OpenGLRenderer::OpenGLRenderer() {
         aui::sl_gen::symbol::fsh::glsl120::Shader>(mSymbolShader);
     useAuislShader<aui::sl_gen::symbol::vsh::glsl120::Shader,
         aui::sl_gen::symbol_sub::fsh::glsl120::Shader>(mSymbolShaderSubPixel);
+    useAuislShader<aui::sl_gen::symbol::vsh::glsl120::Shader,
+        aui::sl_gen::symbol_color::fsh::glsl120::Shader>(mSymbolShaderColor);
 
     useAuislShader<aui::sl_gen::basic_uv::vsh::glsl120::Shader,
         aui::sl_gen::line_solid_dashed::fsh::glsl120::Shader>(mLineSolidDashedShader);
@@ -561,6 +564,7 @@ public:
     AOptional<gl::Vao> mVao;
     gl::VertexBuffer mVertexBuffer;
     gl::IndexBuffer mIndexBuffer;
+    gl::IndexBuffer mColoredIndexBuffer;   // 彩色 emoji 那批索引（独立 RGBA 图集）
     int mTextWidth;
     int mTextHeight;
     OpenGLRenderer::FontEntryData* mEntryData;
@@ -569,6 +573,7 @@ public:
     OpenGLPrerenderedString(OpenGLRenderer* renderer,
                             gl::VertexBuffer vertexBuffer,
                             gl::IndexBuffer indexBuffer,
+                            gl::IndexBuffer coloredIndexBuffer,
                             int textWidth,
                             int textHeight,
                             OpenGLRenderer::FontEntryData* entryData,
@@ -576,6 +581,7 @@ public:
         mRenderer(renderer),
         mVertexBuffer(std::move(vertexBuffer)),
         mIndexBuffer(std::move(indexBuffer)),
+        mColoredIndexBuffer(std::move(coloredIndexBuffer)),
         mTextWidth(textWidth),
         mTextHeight(textHeight),
         mEntryData(entryData),
@@ -592,58 +598,78 @@ public:
 
 
     void draw() override {
-        if (mIndexBuffer.count() == 0) return;
-
-        decltype(auto) img = mEntryData->texturePacker.getImage();
-        if (!img)
-            return;
+        if (mIndexBuffer.count() == 0 && mColoredIndexBuffer.count() == 0) return;
 
         if (AWindow::current()->profiling()->showBaseline) {
             mRenderer->rectangle(
                 ASolidBrush { AColor::RED.transparentize(0.5f) }, { 0, 0 }, { mTextWidth, 1 });   // debug baseline
         }
 
-        auto width = img->width();
-
-        float uvScale = 1.f / float(width);
-
-        if (mEntryData->isTextureInvalid) {
-            mEntryData->texture.tex2D(*img);
-            mEntryData->isTextureInvalid = false;
-        } else {
-            mEntryData->texture.bind();
-        }
-
-        if (mVao) {
-            mVao->bind();
-        } else {
-            mVertexBuffer.bind();
-            mIndexBuffer.bind();
-            setupVertexAttribs();
-        }
-
         auto finalColor = mRenderer->getColor();
-        if (mFontRendering == FontRendering::SUBPIXEL) {
-            mRenderer->mSymbolShaderSubPixel->use();
-            mRenderer->mSymbolShaderSubPixel->set(aui::ShaderUniforms::UV_SCALE, uvScale);
-            mRenderer->mSymbolShaderSubPixel->set(aui::ShaderUniforms::TRANSFORM, mRenderer->getTransform());
-            mRenderer->mSymbolShaderSubPixel->set(aui::ShaderUniforms::COLOR, glm::vec4(1, 1, 1, finalColor.a));
-            glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
-            mIndexBuffer.drawWithoutBind(GL_TRIANGLES);
 
-            mRenderer->mSymbolShaderSubPixel->set(aui::ShaderUniforms::COLOR, finalColor);
-            glBlendFunc(GL_ONE, GL_ONE);
-            mIndexBuffer.drawWithoutBind(GL_TRIANGLES);
+        // ---- 普通字形 pass（单通道图集 + symbol shader，TextColor 染色）----
+        decltype(auto) img = mEntryData->texturePacker.getImage();
+        if (img && mIndexBuffer.count() > 0) {
+            float uvScale = 1.f / float(img->width());
+            if (mEntryData->isTextureInvalid) {
+                mEntryData->texture.tex2D(*img);
+                mEntryData->isTextureInvalid = false;
+            } else {
+                mEntryData->texture.bind();
+            }
 
-            // reset blending
+            if (mVao) {
+                mVao->bind();
+            } else {
+                mVertexBuffer.bind();
+                mIndexBuffer.bind();
+                setupVertexAttribs();
+            }
+
+            if (mFontRendering == FontRendering::SUBPIXEL) {
+                mRenderer->mSymbolShaderSubPixel->use();
+                mRenderer->mSymbolShaderSubPixel->set(aui::ShaderUniforms::UV_SCALE, uvScale);
+                mRenderer->mSymbolShaderSubPixel->set(aui::ShaderUniforms::TRANSFORM, mRenderer->getTransform());
+                mRenderer->mSymbolShaderSubPixel->set(aui::ShaderUniforms::COLOR, glm::vec4(1, 1, 1, finalColor.a));
+                glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
+                mIndexBuffer.drawWithoutBind(GL_TRIANGLES);
+
+                mRenderer->mSymbolShaderSubPixel->set(aui::ShaderUniforms::COLOR, finalColor);
+                glBlendFunc(GL_ONE, GL_ONE);
+                mIndexBuffer.drawWithoutBind(GL_TRIANGLES);
+
+                mRenderer->setBlending(Blending::NORMAL);
+            } else {
+                mRenderer->setBlending(Blending::NORMAL);
+                mRenderer->mSymbolShader->use();
+                mRenderer->mSymbolShader->set(aui::ShaderUniforms::UV_SCALE, uvScale);
+                mRenderer->mSymbolShader->set(aui::ShaderUniforms::TRANSFORM, mRenderer->getTransform());
+                mRenderer->mSymbolShader->set(aui::ShaderUniforms::COLOR, finalColor);
+                mIndexBuffer.drawWithoutBind(GL_TRIANGLES);
+            }
+        }
+
+        // ---- 彩色 emoji pass（RGBA 图集 + symbol_color shader，不染色，普通混合）----
+        decltype(auto) cimg = mEntryData->coloredTexturePacker.getImage();
+        if (cimg && mColoredIndexBuffer.count() > 0 && mRenderer->mSymbolShaderColor) {
+            float uvScale = 1.f / float(cimg->width());
+            if (mEntryData->isColoredTextureInvalid) {
+                mEntryData->coloredTexture.tex2D(*cimg);
+                mEntryData->isColoredTextureInvalid = false;
+            } else {
+                mEntryData->coloredTexture.bind();
+            }
+            // VAO 绑的是普通 index buffer，彩色这批走手动绑定路径。
+            mVertexBuffer.bind();
+            mColoredIndexBuffer.bind();
+            setupVertexAttribs();
+
             mRenderer->setBlending(Blending::NORMAL);
-        } else {
-            mRenderer->setBlending(Blending::NORMAL);
-            mRenderer->mSymbolShader->use();
-            mRenderer->mSymbolShader->set(aui::ShaderUniforms::UV_SCALE, uvScale);
-            mRenderer->mSymbolShader->set(aui::ShaderUniforms::TRANSFORM, mRenderer->getTransform());
-            mRenderer->mSymbolShader->set(aui::ShaderUniforms::COLOR, finalColor);
-            mIndexBuffer.drawWithoutBind(GL_TRIANGLES);
+            mRenderer->mSymbolShaderColor->use();
+            mRenderer->mSymbolShaderColor->set(aui::ShaderUniforms::UV_SCALE, uvScale);
+            mRenderer->mSymbolShaderColor->set(aui::ShaderUniforms::TRANSFORM, mRenderer->getTransform());
+            mRenderer->mSymbolShaderColor->set(aui::ShaderUniforms::COLOR, finalColor);
+            mColoredIndexBuffer.drawWithoutBind(GL_TRIANGLES);
         }
     }
 
@@ -670,6 +696,8 @@ private:
 class OpenGLMultiStringCanvas : public IRenderer::IMultiStringCanvas {
 private:
     AVector<OpenGLPrerenderedString::Vertex> mVertices;
+    // 每个四边形（4 顶点=1 字形）是否为彩色 emoji——finalize 时据此拆两组索引。
+    AVector<bool> mColoredQuad;
     OpenGLRenderer* mRenderer;
     AFontStyle mFontStyle;
     OpenGLRenderer::FontEntryData* mEntryData;
@@ -722,9 +750,13 @@ public:
                     int height = ch.image->height();
 
                     glm::vec4 uv;
+                    // 彩色 emoji 走独立 RGBA 图集/纹理（不能与单通道字形混一张图集，
+                    // AImage::insert 会隐式转格式毁色）。UV 存像素坐标，draw 按各自图集
+                    // 宽度归一化——但两图集宽度可能不同，故彩色 UV 在此直接归一化存好。
+                    auto& pk = ch.colored ? mEntryData->coloredTexturePacker : texturePacker;
 
                     if (ch.rendererData == nullptr) {
-                        uv = texturePacker.insert(*ch.image);
+                        uv = pk.insert(*ch.image);
 
                         const float BIAS = 0.1f;
                         uv.x += BIAS;
@@ -733,7 +765,8 @@ public:
                         uv.w -= BIAS;
                         mRenderer->mCharData.push_back(OpenGLRenderer::CharacterData{uv});
                         ch.rendererData = &mRenderer->mCharData.last();
-                        mEntryData->isTextureInvalid = true;
+                        if (ch.colored) mEntryData->isColoredTextureInvalid = true;
+                        else            mEntryData->isTextureInvalid = true;
                     } else {
                         uv = reinterpret_cast<OpenGLRenderer::CharacterData*>(ch.rendererData)->uv;
                     }
@@ -747,6 +780,7 @@ public:
                                          glm::vec2(uv.x, uv.y)});
                     mVertices.push_back({glm::vec2(posX + width, posY),
                                          glm::vec2(uv.z, uv.y)});
+                    mColoredQuad.push_back(ch.colored);
 
                 }
 
@@ -781,23 +815,28 @@ public:
         gl::VertexBuffer vertexBuffer;
         vertexBuffer.set(mVertices);
 
-        // build indices
-        AVector<GLuint> indices;
+        // 按四边形是否彩色拆两组索引：普通字形一组（symbol shader + 单通道图集），
+        // 彩色 emoji 一组（symbol_color shader + RGBA 图集）。draw 分两 pass。
+        AVector<GLuint> indices, coloredIndices;
         indices.reserve(mVertices.size() / 4 * 6);
         for (unsigned i = 0; i < mVertices.size() / 4; ++i) {
-            indices.push_back(i * 4);
-            indices.push_back(i * 4 + 1);
-            indices.push_back(i * 4 + 2);
-            indices.push_back(i * 4 + 2);
-            indices.push_back(i * 4 + 1);
-            indices.push_back(i * 4 + 3);
+            auto& dst = (i < mColoredQuad.size() && mColoredQuad[i]) ? coloredIndices : indices;
+            dst.push_back(i * 4);
+            dst.push_back(i * 4 + 1);
+            dst.push_back(i * 4 + 2);
+            dst.push_back(i * 4 + 2);
+            dst.push_back(i * 4 + 1);
+            dst.push_back(i * 4 + 3);
         }
         gl::IndexBuffer indexBuffer;
         indexBuffer.set(indices);
+        gl::IndexBuffer coloredIndexBuffer;
+        coloredIndexBuffer.set(coloredIndices);
 
         return _new<OpenGLPrerenderedString>(mRenderer,
                                              std::move(vertexBuffer),
                                              std::move(indexBuffer),
+                                             std::move(coloredIndexBuffer),
                                              mAdvanceX,
                                              mAdvanceY,
                                              mEntryData,
