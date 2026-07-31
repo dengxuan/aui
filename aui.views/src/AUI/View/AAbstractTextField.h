@@ -13,6 +13,7 @@
 
 #include <AUI/View/AAbstractTypeableView.h>
 #include "AUI/Enum/ATextInputType.h"
+#include <functional>
 #include "AView.h"
 #include "AUI/Common/ATimer.h"
 #include <AUI/Common/IStringable.h>
@@ -71,10 +72,23 @@ public:
 
     glm::ivec2 getCursorPosition() override;
 
+    /**
+     * @brief 内联绘制钩子：文本字形画完后回调，让上层在字符位置上叠画（如 emoji 精灵图）。
+     * @details 参数：renderer、当前文本(utf32)、posByIndex(字符下标→该字符左边 x 像素，已含
+     *          padding/scroll 偏移的**内容坐标**)、基线 y、字号。文本仍以码点存储（光标/IME
+     *          原生工作），上层据此把某些码点段叠画成图片。Telegram 输入框 emoji 内联同思路
+     *          （Qt 用 QTextObjectInterface，这里用绘制钩子）。
+     */
+    using InlineDrawer = std::function<void(IRenderer& render, const std::u32string& text,
+                                            const std::function<int(size_t)>& xByIndex,
+                                            int baselineY, int fontSize)>;
+    void setInlineDrawer(InlineDrawer drawer) { mInlineDrawer = std::move(drawer); invalidateFont(); }
+
 protected:
     _<IRenderer::IPrerenderedString> mPrerenderedString;
     std::u32string mContents;
     AString mSuffix;
+    InlineDrawer mInlineDrawer;
 
     virtual bool isValidText(std::u32string_view text);
 
