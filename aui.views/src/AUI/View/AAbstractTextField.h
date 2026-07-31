@@ -74,10 +74,10 @@ public:
 
     /**
      * @brief 内联绘制钩子：文本字形画完后回调，让上层在字符位置上叠画（如 emoji 精灵图）。
-     * @details 参数：renderer、当前文本(utf32)、posByIndex(字符下标→该字符左边 x 像素，已含
-     *          padding/scroll 偏移的**内容坐标**)、基线 y、字号。文本仍以码点存储（光标/IME
-     *          原生工作），上层据此把某些码点段叠画成图片。Telegram 输入框 emoji 内联同思路
-     *          （Qt 用 QTextObjectInterface，这里用绘制钩子）。
+     * @details 参数：renderer、当前文本(utf32)、xByIndex(字符下标→该字符左边 x 像素，含
+     *          padding/scroll 的**内容坐标**)、centerY(文本可视区竖直中心，供图片按中心居中)、
+     *          字号。文本仍以码点存储（光标/IME 原生工作），上层据此把某些码点段叠画成图片。
+     *          Telegram 输入框 emoji 内联同思路（Qt 用 QTextObjectInterface，这里用绘制钩子）。
      */
     using InlineDrawer = std::function<void(IRenderer& render, const std::u32string& text,
                                             const std::function<int(size_t)>& xByIndex,

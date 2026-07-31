@@ -56,12 +56,15 @@ void AAbstractTextField::render(ARenderContext ctx) {
     drawSelectionBeforeAndAfter(ctx.render, selectionRects, [&] {
         doDrawString(ctx.render);
     });
-    // 内联绘制钩子（emoji 精灵图叠在字形上）：文本字形已画，据字符位置叠图。getPosByIndex
-    // 返回的 x 已是内容坐标（含 padding/scroll），传给上层。y 用基线上方（同选区/光标 y）。
+    // 内联绘制钩子（emoji 精灵图叠在字形上）：文本字形已画，据字符位置叠图。xByIndex 返回
+    // 字符左边 x（内容坐标，含 padding/scroll）。传文本可视区域的**竖直中心 y**（供上层把
+    // 图片按中心垂直居中），= 字形顶 y + 文本可视高/2（文本可视高 = 字号 + ascender，同选区框）。
     if (mInlineDrawer) {
         const auto& text = mContents;
         auto xByIndex = [this](size_t i) { return getPosByIndex(i).x + mPadding.left; };
-        mInlineDrawer(ctx.render, text, xByIndex, y, int(getFontStyle().size));
+        const int textVisualH = int(getFontStyle().size) + getFontStyle().getAscenderHeight();
+        const int centerY = y + textVisualH / 2;
+        mInlineDrawer(ctx.render, text, xByIndex, centerY, int(getFontStyle().size));
     }
     if (!mIsEditable) {
         return;
