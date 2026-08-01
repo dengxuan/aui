@@ -57,14 +57,17 @@ void AAbstractTextField::render(ARenderContext ctx) {
         doDrawString(ctx.render);
     });
     // 内联绘制钩子（emoji 精灵图叠在字形上）：文本字形已画，据字符位置叠图。xByIndex 返回
-    // 字符左边 x（内容坐标，含 padding/scroll）。传文本可视区域的**竖直中心 y**（供上层把
-    // 图片按中心垂直居中），= 字形顶 y + 文本可视高/2（文本可视高 = 字号 + ascender，同选区框）。
+    // 字符左边 x（内容坐标，含 padding/scroll）。第 4 参传**文字基线 y**（= 字形绘制原点，
+    // 上面 y 是字形顶 = 基线 - ascender，故基线 = y + ascender = getVerticalAlignmentOffset()）。
+    // 上层据基线把图片按小写字母视觉中线（基线上方约 0.34·字号）居中，图文对齐更准。
     if (mInlineDrawer) {
         const auto& text = mContents;
         auto xByIndex = [this](size_t i) { return getPosByIndex(i).x + mPadding.left; };
-        const int textVisualH = int(getFontStyle().size) + getFontStyle().getAscenderHeight();
-        const int centerY = y + textVisualH / 2;
-        mInlineDrawer(ctx.render, text, xByIndex, centerY, int(getFontStyle().size));
+        const int baselineY = getVerticalAlignmentOffset();
+        // 选区区间（码点下标）供上层对选中的 emoji 做反色，与文字选区一致；无选区传 [0,0)。
+        size_t selB = 0, selE = 0;
+        if (hasSelection()) { auto s = selection(); selB = s.begin; selE = s.end; }
+        mInlineDrawer(ctx.render, text, xByIndex, baselineY, int(getFontStyle().size), selB, selE);
     }
     if (!mIsEditable) {
         return;

@@ -81,7 +81,8 @@ public:
      */
     using InlineDrawer = std::function<void(IRenderer& render, const std::u32string& text,
                                             const std::function<int(size_t)>& xByIndex,
-                                            int baselineY, int fontSize)>;
+                                            int baselineY, int fontSize,
+                                            size_t selBegin, size_t selEnd)>;
     void setInlineDrawer(InlineDrawer drawer) { mInlineDrawer = std::move(drawer); invalidateFont(); }
 
 protected:
