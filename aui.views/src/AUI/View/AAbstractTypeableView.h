@@ -135,8 +135,8 @@ public:
         if (!this->hasFocus()) {
             return;
         }
-        // cursor height matches selection rect (size + ascender).
-        drawCursorImpl(renderer, position, this->getFontStyle().size + this->getFontStyle().getAscenderHeight());
+        // cursor height matches selection rect: size + descender (= text field minimum content height).
+        drawCursorImpl(renderer, position, this->getFontStyle().size + this->getFontStyle().getDescenderHeight());
     }
 
 protected:

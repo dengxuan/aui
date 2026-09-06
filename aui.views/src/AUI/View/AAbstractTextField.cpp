@@ -44,14 +44,20 @@ void AAbstractTextField::render(ARenderContext ctx) {
     prerenderStringIfNeeded(ctx.render);
 
     AStaticVector<ARect<int>, 1> selectionRects;
-    // selection/cursor top aligns with glyph top = baseline (VAO) - ascender.
-    int y = getVerticalAlignmentOffset() - getFontStyle().getAscenderHeight();
+    // 选区/光标盒：高 = 字号 + 降部（= getContentMinimumHeight，字段最小高），以字形盒
+    // [基线-升部, 基线+降部] 为中心上下对称——CJK 字形（约 0.88 字号在基线上）也包得住。
+    // 旧值「字号+升部」比字形盒高出一截且全在下方，看起来文字顶在高亮框上缘、上下边距不等。
+    const int baseline = getVerticalAlignmentOffset();
+    const int asc = getFontStyle().getAscenderHeight();
+    const int desc = getFontStyle().getDescenderHeight();
+    const int boxH = int(getFontStyle().size) + desc;
+    const int y = baseline - asc - std::max(0, boxH - asc - desc) / 2;
     if (hasSelection()) {
         auto s = selection();
         auto beginPos = getPosByIndex(s.begin).x;
         auto endPos = getPosByIndex(s.end).x;
         selectionRects.push_back(ARect<int>::fromTopLeftPositionAndSize({mPadding.left + beginPos, y},
-                                                                        {endPos - beginPos, getFontStyle().size + getFontStyle().getAscenderHeight()}));
+                                                                        {endPos - beginPos, boxH}));
     }
     drawSelectionBeforeAndAfter(ctx.render, selectionRects, [&] {
         doDrawString(ctx.render);
